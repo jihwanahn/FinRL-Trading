@@ -21,8 +21,6 @@
 ![](https://img.shields.io/github/issues-pr-raw/AI4Finance-Foundation/FinRL-Trading?label=PRs)
 ![Visitors](https://api.visitorbadge.io/api/VisitorHit?user=AI4Finance-Foundation&repo=FinRL-Trading&countColor=%23B17A)
 
-**Accepted at DMO-FinTech Workshop, PAKDD 2026**
-
 *A deployment-consistent trading system that unifies data processing, strategy composition, backtesting, and broker execution through a weight-centric interface.*
 
 [Paper](https://arxiv.org/abs/2603.21330) | [Quick Start](#-quick-start) | [Strategies](#-strategies) | [Results](#-results) | [Discord](https://discord.gg/trsr8SXpW5)
@@ -354,11 +352,12 @@ class MyStrategy(BaseStrategy):
 ## Citation
 
 ```bibtex
-@article{yang2025finrlx,
-  title   = {FinRL-X: An AI-Native Modular Infrastructure for Quantitative Trading},
-  author  = {Hongyang Yang and Boyu Zhang and Yang She and Xinyu Liao and Xiaoli Zhang},
-  journal = {arXiv preprint arXiv:2603.21330},
-  year    = {2025}
+@inproceedings{yang2026finrlx,
+  title     = {FinRL-X: An AI-Native Modular Infrastructure for Quantitative Trading},
+  author    = {Yang, Hongyang and Zhang, Boyu and She, Yang and Liao, Xinyu and Zhang, Xiaoli},
+  booktitle = {Proceedings of the 2nd International Workshop on Decision Making and Optimization in Financial Technologies (DMO-FinTech)},
+  year      = {2026},
+  note      = {Workshop at PAKDD 2026}
 }
 ```
 
