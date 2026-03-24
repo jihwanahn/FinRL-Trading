@@ -448,27 +448,6 @@ class MyCustomStrategy(BaseStrategy):
         # Your strategy logic here
         pass
 ```
-
-## 📋 Roadmap
-
-### Completed Features ✅
-- ✅ Modular strategy framework
-- ✅ ML-based stock selection strategies
-- ✅ Professional backtesting system (powered by bt library)
-- ✅ Alpaca live trading integration
-- ✅ Multi-source data support (Yahoo/FMP/WRDS)
-- ✅ Comprehensive risk management system
-- ✅ Performance analysis and reporting
-
-### Planned Enhancements 🚧
-- 🔄 Deep reinforcement learning strategies
-- 🔄 Alternative data integration
-- 🔄 Multi-asset support (crypto, futures)
-- 🔄 Advanced portfolio optimization algorithms
-- 🔄 Real-time alerting system
-- 🔄 Web visualization interface
-- 🔄 Docker containerization
-
 ## 📝 License
 
 This project is licensed under the **Apache License 2.0** - see the [LICENSE](LICENSE) file for details.
