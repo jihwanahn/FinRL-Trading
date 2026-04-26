@@ -160,6 +160,8 @@ def get_missing_trading_days(existing_dates: List[str], start_date: str, end_dat
         'AMEX': 'America/New_York',
         'LSE': 'Europe/London',
         'JPX': 'Asia/Tokyo',
+        'XKRX': 'Asia/Seoul',
+        'KRX': 'Asia/Seoul',
         # Add more exchanges as needed
     }
     tz_str = exchange_tz_map.get(exchange.upper(), 'America/New_York')

@@ -1179,6 +1179,13 @@ class DataSourceManager:
             ('FMP', FMPFetcher(cache_dir))
         ]
 
+        # Lazily register KRXFetcher if pykrx is available
+        try:
+            from src.data.krx_fetcher import KRXFetcher
+            self.data_sources.append(('KRX', KRXFetcher()))
+        except ImportError:
+            logger.debug("pykrx/finance-datareader not installed; KRXFetcher unavailable")
+
         # Determine best available source
         self._select_best_source()
 
@@ -1209,6 +1216,13 @@ class DataSourceManager:
     def get_sp500_components(self, date: str = None) -> pd.DataFrame:
         """Get S&P 500 components using best available source."""
         return self.current_source.get_sp500_components(date)
+
+    def get_kospi200_components(self, date: str = None) -> pd.DataFrame:
+        """Get KOSPI 200 components using KRXFetcher."""
+        for name, source in self.data_sources:
+            if name == 'KRX':
+                return source.get_kospi200_components(date)
+        raise RuntimeError("KRXFetcher not available; install pykrx and finance-datareader")
 
     def get_fundamental_data(self, tickers: pd.DataFrame,
                            start_date: str, end_date: str, align_quarter_dates: bool = False) -> pd.DataFrame:

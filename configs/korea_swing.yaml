@@ -1,0 +1,63 @@
+# Korea Swing Trading Strategy Configuration
+# Module B: 스윙 트레이딩 (한국 KOSPI200)
+
+strategy:
+  name: "KR-Swing"
+  universe: "kospi200"
+  exchange: "XKRX"
+
+backtest:
+  start_date: "2015-01-01"
+  end_date: "2024-12-31"
+  initial_capital: 100_000_000  # 1억원
+  rebalance_freq: "W"           # 주간 리밸런싱
+  transaction_cost: 0.003       # 왕복 (수수료 + 증권거래세)
+
+  benchmark_tickers:
+    - "069500"  # KODEX 200
+
+data:
+  source: "krx"
+
+signal:
+  # 이동평균선
+  ma_short: 5
+  ma_mid: 20
+  ma_long: 60
+
+  # RSI
+  rsi_period: 14
+  rsi_overbought: 70
+  rsi_oversold: 30
+
+  # MACD
+  macd_fast: 12
+  macd_slow: 26
+  macd_signal: 9
+
+  # 볼린저 밴드
+  bb_period: 20
+  bb_std: 2.0
+
+  # 신호 가중치
+  weights:
+    ma: 0.35
+    rsi: 0.25
+    macd: 0.25
+    bb: 0.15
+
+portfolio:
+  max_positions: 10
+  min_signal_threshold: 0.30
+  max_weight_per_stock: 0.10
+
+risk:
+  stop_loss: -0.05          # -5% 절대 손절
+  max_drawdown_exit: -0.15  # -15% MDD 트리거
+
+ml_optional:
+  enabled: false
+  model: "lightgbm"
+  train_window_days: 504
+  predict_horizon_days: 5
+  max_positions: 10

@@ -147,6 +147,17 @@ class LoggingSettings(BaseSettings):
         env_prefix = "LOG_"
 
 
+class KISSettings(BaseSettings):
+    """Korea Investment & Securities (KIS) API configuration settings."""
+    app_key: Optional[str] = None
+    app_secret: Optional[str] = None
+    base_url: str = "https://openapivts.koreainvestment.com:9443"  # 모의투자 기본값
+    use_paper_trading: bool = True
+
+    class Config:
+        env_prefix = "KIS_"
+
+
 class FinRLSettings(BaseSettings):
     """Main FinRL configuration settings."""
     app_name: str = "FinRL Trading"
@@ -156,6 +167,7 @@ class FinRLSettings(BaseSettings):
     # Sub-settings
     database: DatabaseSettings = DatabaseSettings()
     alpaca: AlpacaSettings = AlpacaSettings()
+    kis: KISSettings = KISSettings()
     wrds: WRDSSettings = WRDSSettings()
     fmp: FMPSettings = FMPSettings()
     openai: OpenAISettings = OpenAISettings()

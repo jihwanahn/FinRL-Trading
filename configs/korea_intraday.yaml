@@ -1,0 +1,85 @@
+# Korea Intraday (Day Trading) Strategy Configuration
+# Module C: 단타 전략 (한국 KOSPI200, 15분봉 기반)
+
+strategy:
+  name: "KR-Intraday"
+  universe: "kospi200"
+  exchange: "XKRX"
+  trading_hours: "09:00-15:30"  # KST
+
+backtest:
+  # 일봉 시뮬레이션 (10년 전체)
+  daily_sim:
+    start_date: "2015-01-01"
+    end_date: "2024-12-31"
+    mode: "daily_sim"
+    initial_capital: 50_000_000
+    transaction_cost: 0.00025  # 왕복 0.025% (수수료 × 2 + 세금)
+
+  # 15분봉 정밀 백테스트 (가능 구간)
+  intraday_15m:
+    start_date: "2022-01-01"
+    end_date: "2024-12-31"
+    mode: "intraday_15m"
+    initial_capital: 50_000_000
+    transaction_cost: 0.00025
+
+  benchmark_tickers:
+    - "069500"  # KODEX 200
+
+data:
+  source: "krx"
+  interval_min: 15
+
+momentum_scanner:
+  min_gap_pct: 0.02        # 최소 +2% 갭업
+  min_vol_ratio: 2.0       # 전일 대비 최소 거래량 2배
+  min_market_cap_bn: 30    # 최소 시총 300억원
+  top_n: 10                # 상위 N개 종목
+
+aziz_strategies:
+  # Opening Range Breakout
+  orb:
+    enabled: true
+    orb_bars: 1             # 첫 1개 15분봉 (09:00~09:15)
+    min_vol_ratio: 1.2
+
+  # Gap and Go
+  gap_and_go:
+    enabled: true
+    min_gap_pct: 0.02
+    rr_ratio: 2.0
+
+  # Bull Flag
+  bull_flag:
+    enabled: true
+    min_pole_gain: 0.03
+    max_flag_bars: 5
+    max_flag_range_pct: 0.02
+
+  # ABCD Pattern
+  abcd:
+    enabled: true
+    fib_min: 0.618
+    fib_max: 0.786
+
+  # VWAP Reversal
+  vwap_reversal:
+    enabled: true
+    min_gapdown_pct: 0.03
+
+portfolio:
+  max_positions: 3           # 최대 동시 보유 종목
+  position_size: 0.20        # 포지션당 총자산 20%
+  risk_per_trade: 0.01       # 거래당 리스크 총자산 1%
+
+risk:
+  stop_loss: -0.02           # 포지션당 -2% 손절 (intraday)
+  eod_close: true            # 당일 종가 전 전량 청산
+  eod_close_time: "15:15"    # KST 15:15 청산
+
+live_collection:
+  # 지금부터 KIS API로 15분봉 누적
+  enabled: false
+  tickers: []  # 비워두면 KOSPI200 전체
+  store_in_db: true

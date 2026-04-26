@@ -155,6 +155,55 @@ class DataStore:
             ''')
 
 
+            # KOSPI200 index components snapshot table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS kospi200_components (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    date TEXT NOT NULL,
+                    tickers TEXT NOT NULL,
+                    sectors TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(date)
+                )
+            ''')
+
+            # KRX fundamental data (PER, PBR, EPS, BPS, DPS, DIV yield)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS krx_fundamental_data (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ticker TEXT NOT NULL,
+                    datadate TEXT NOT NULL,
+                    per REAL,
+                    pbr REAL,
+                    eps REAL,
+                    bps REAL,
+                    dps REAL,
+                    div_yield REAL,
+                    market_cap REAL,
+                    shares_outstanding REAL,
+                    gsector TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(ticker, datadate)
+                )
+            ''')
+
+            # Intraday (sub-daily) price data - supports 15-min bars
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS intraday_price_data (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ticker TEXT NOT NULL,
+                    datetime TEXT NOT NULL,
+                    open REAL,
+                    high REAL,
+                    low REAL,
+                    close REAL,
+                    volume REAL,
+                    interval_min INTEGER DEFAULT 15,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(ticker, datetime, interval_min)
+                )
+            ''')
+
             # Fundamental data table (processed quarterly factors)
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS fundamental_data (
@@ -189,6 +238,18 @@ class DataStore:
                     cursor.execute(f'ALTER TABLE fundamental_data ADD COLUMN {col}')
                 except sqlite3.OperationalError:
                     pass
+
+            # Migrate: add income statement / balance sheet columns to krx_fundamental_data
+            _new_krx_cols = [
+                'revenue', 'gross_profit', 'operating_income',
+                'current_assets', 'current_liabilities',
+                'total_liabilities', 'net_income', 'total_equity',
+            ]
+            for col in _new_krx_cols:
+                try:
+                    cursor.execute(f'ALTER TABLE krx_fundamental_data ADD COLUMN {col} REAL')
+                except sqlite3.OperationalError:
+                    pass  # column already exists
 
             # Migrate: add new fundamental columns (idempotent)
             _new_fundamental_cols = [
@@ -725,6 +786,155 @@ class DataStore:
                 return result[0], result[1], result[2]
             else:
                 return None, None, None
+
+    # =========================
+    # KRX / KOSPI200 helpers
+    # =========================
+
+    def save_kospi200_components(self, date: str, tickers: str, sectors: str = None) -> bool:
+        """Save KOSPI200 component snapshot."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT OR REPLACE INTO kospi200_components (date, tickers, sectors)
+                    VALUES (?, ?, ?)
+                ''', (date, tickers, sectors or ''))
+                conn.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save KOSPI200 components: {e}")
+            return False
+
+    def get_kospi200_components(self, date: str = None) -> tuple:
+        """Get KOSPI200 components. Returns (tickers_str, sectors_str) or (None, None)."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            if date:
+                cursor.execute(
+                    'SELECT tickers, sectors FROM kospi200_components WHERE date <= ? ORDER BY date DESC LIMIT 1',
+                    (date,)
+                )
+            else:
+                cursor.execute(
+                    'SELECT tickers, sectors FROM kospi200_components ORDER BY date DESC LIMIT 1'
+                )
+            row = cursor.fetchone()
+            return (row[0], row[1]) if row else (None, None)
+
+    def save_krx_fundamental_data(self, df: pd.DataFrame) -> int:
+        """Save KRX fundamental data rows."""
+        if df is None or df.empty:
+            return 0
+        df = df.copy()
+        rows_affected = 0
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            for _, row in df.iterrows():
+                try:
+                    cursor.execute('''
+                        INSERT OR REPLACE INTO krx_fundamental_data
+                        (ticker, datadate, per, pbr, eps, bps, dps, div_yield,
+                         market_cap, shares_outstanding, gsector,
+                         revenue, gross_profit, operating_income,
+                         current_assets, current_liabilities,
+                         total_liabilities, net_income, total_equity)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        str(row.get('ticker', row.get('tic', ''))),
+                        str(row.get('datadate', row.get('date', ''))),
+                        float(row['per']) if pd.notna(row.get('per')) else None,
+                        float(row['pbr']) if pd.notna(row.get('pbr')) else None,
+                        float(row['eps']) if pd.notna(row.get('eps')) else None,
+                        float(row['bps']) if pd.notna(row.get('bps')) else None,
+                        float(row['dps']) if pd.notna(row.get('dps')) else None,
+                        float(row['div_yield']) if pd.notna(row.get('div_yield')) else None,
+                        float(row['market_cap']) if pd.notna(row.get('market_cap')) else None,
+                        float(row['shares_outstanding']) if pd.notna(row.get('shares_outstanding')) else None,
+                        str(row.get('gsector', '')) or None,
+                        float(row['revenue']) if pd.notna(row.get('revenue')) else None,
+                        float(row['gross_profit']) if pd.notna(row.get('gross_profit')) else None,
+                        float(row['operating_income']) if pd.notna(row.get('operating_income')) else None,
+                        float(row['current_assets']) if pd.notna(row.get('current_assets')) else None,
+                        float(row['current_liabilities']) if pd.notna(row.get('current_liabilities')) else None,
+                        float(row['total_liabilities']) if pd.notna(row.get('total_liabilities')) else None,
+                        float(row['net_income']) if pd.notna(row.get('net_income')) else None,
+                        float(row['total_equity']) if pd.notna(row.get('total_equity')) else None,
+                    ))
+                    rows_affected += 1
+                except Exception as e:
+                    logger.warning(f"Failed to save KRX fundamental row: {e}")
+            conn.commit()
+        return rows_affected
+
+    def get_krx_fundamental_data(self, tickers: List[str] = None,
+                                  start_date: str = None, end_date: str = None) -> pd.DataFrame:
+        """Load KRX fundamental data from DB."""
+        conditions, params = [], []
+        if tickers:
+            placeholders = ','.join(['?'] * len(tickers))
+            conditions.append(f'ticker IN ({placeholders})')
+            params.extend(tickers)
+        if start_date:
+            conditions.append('datadate >= ?')
+            params.append(start_date)
+        if end_date:
+            conditions.append('datadate <= ?')
+            params.append(end_date)
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ''
+        with sqlite3.connect(self.db_path) as conn:
+            df = pd.read_sql_query(
+                f'SELECT * FROM krx_fundamental_data {where} ORDER BY ticker, datadate',
+                conn, params=params
+            )
+        return df
+
+    def save_intraday_data(self, df: pd.DataFrame, interval_min: int = 15) -> int:
+        """Save intraday OHLCV bars."""
+        if df is None or df.empty:
+            return 0
+        df = df.copy()
+        rows_affected = 0
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            for _, row in df.iterrows():
+                try:
+                    cursor.execute('''
+                        INSERT OR REPLACE INTO intraday_price_data
+                        (ticker, datetime, open, high, low, close, volume, interval_min)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        str(row.get('ticker', row.get('tic', ''))),
+                        str(row.get('datetime', row.get('date', ''))),
+                        float(row['open']) if pd.notna(row.get('open')) else None,
+                        float(row['high']) if pd.notna(row.get('high')) else None,
+                        float(row['low']) if pd.notna(row.get('low')) else None,
+                        float(row['close']) if pd.notna(row.get('close')) else None,
+                        float(row['volume']) if pd.notna(row.get('volume')) else None,
+                        int(interval_min),
+                    ))
+                    rows_affected += 1
+                except Exception as e:
+                    logger.warning(f"Failed to save intraday row: {e}")
+            conn.commit()
+        return rows_affected
+
+    def get_intraday_data(self, tickers: List[str], start_datetime: str,
+                          end_datetime: str, interval_min: int = 15) -> pd.DataFrame:
+        """Load intraday data from DB."""
+        if not tickers:
+            return pd.DataFrame()
+        placeholders = ','.join(['?'] * len(tickers))
+        with sqlite3.connect(self.db_path) as conn:
+            df = pd.read_sql_query(f'''
+                SELECT ticker, datetime, open, high, low, close, volume, interval_min
+                FROM intraday_price_data
+                WHERE ticker IN ({placeholders})
+                  AND datetime >= ? AND datetime <= ?
+                  AND interval_min = ?
+                ORDER BY ticker, datetime
+            ''', conn, params=list(tickers) + [start_datetime, end_datetime, interval_min])
+        return df
 
     def get_storage_stats(self) -> Dict:
         """Get storage statistics."""

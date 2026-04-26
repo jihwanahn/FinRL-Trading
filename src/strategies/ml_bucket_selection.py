@@ -32,6 +32,7 @@ warnings.filterwarnings("ignore")
 # Sector -> Bucket mapping (synced with group_selection_by_gics.py v1.2.2)
 # ---------------------------------------------------------------------------
 SECTOR_TO_BUCKET = {
+    # ---- English GICS (S&P 500 / NASDAQ) ----
     "information technology": "growth_tech",
     "technology": "growth_tech",
     "communication services": "growth_tech",
@@ -49,6 +50,19 @@ SECTOR_TO_BUCKET = {
     "consumer staples": "defensive",
     "consumer defensive": "defensive",
     "utilities": "defensive",
+    # ---- Korean WICS (KOSPI200) ----
+    "it": "growth_tech",
+    "정보기술": "growth_tech",
+    "커뮤니케이션서비스": "growth_tech",
+    "경기관련소비재": "cyclical",
+    "금융": "cyclical",
+    "산업재": "cyclical",
+    "에너지": "real_assets",
+    "소재": "real_assets",
+    "부동산": "real_assets",
+    "건강관리": "defensive",
+    "필수소비재": "defensive",
+    "유틸리티": "defensive",
 }
 
 FEATURE_COLS = [
@@ -108,6 +122,9 @@ def datadate_to_tradedate(datadate_str):
 
 
 def build_models():
+    import torch
+    use_cuda = torch.cuda.is_available()
+
     models = {
         "RF": RandomForestRegressor(n_estimators=200, max_depth=8, random_state=42, n_jobs=-1),
         "XGB": None,
@@ -118,15 +135,36 @@ def build_models():
     }
     try:
         from xgboost import XGBRegressor
-        models["XGB"] = XGBRegressor(n_estimators=200, max_depth=6, learning_rate=0.05, random_state=42, verbosity=0)
+        if use_cuda:
+            models["XGB"] = XGBRegressor(
+                n_estimators=500, max_depth=6, learning_rate=0.05, random_state=42,
+                verbosity=0, device="cuda", tree_method="hist",
+                subsample=0.8, colsample_bytree=0.8,
+            )
+        else:
+            models["XGB"] = XGBRegressor(
+                n_estimators=200, max_depth=6, learning_rate=0.05, random_state=42,
+                verbosity=0, n_jobs=-1,
+            )
     except ImportError:
         del models["XGB"]
 
     try:
         from lightgbm import LGBMRegressor
-        models["LGBM"] = LGBMRegressor(n_estimators=200, max_depth=6, learning_rate=0.05, random_state=42, verbose=-1)
+        # LightGBM CPU only (CUDA build requires recompile)
+        models["LGBM"] = LGBMRegressor(
+            n_estimators=500 if use_cuda else 200,
+            max_depth=6, learning_rate=0.05, random_state=42,
+            verbose=-1, n_jobs=-1,
+            subsample=0.8, colsample_bytree=0.8,
+        )
     except ImportError:
         del models["LGBM"]
+
+    if use_cuda:
+        print(f"[build_models] GPU detected ({torch.cuda.get_device_name(0)}): XGB using CUDA, LGBM using CPU")
+    else:
+        print("[build_models] No GPU detected: all models using CPU")
 
     return models
 
@@ -482,7 +520,7 @@ def main():
     parser = argparse.ArgumentParser(description="Per-bucket ML stock selection")
     parser.add_argument("--db", default=os.path.join(project_root, "data", "finrl_trading.db"))
     parser.add_argument("--universe", default=None,
-                        help="Filter to a stock universe: sp500, nasdaq100, or path to CSV with 'tickers' column")
+                        help="Filter to a stock universe: sp500, nasdaq100, kospi200, or path to CSV with 'tickers' column")
     parser.add_argument("--val-cutoff", default="2025-12-31", help="Validation end date (last val quarter)")
     parser.add_argument("--val-quarters", type=int, default=3, help="Number of validation quarters (default: 3)")
     parser.add_argument("--output-dir", default=os.path.join(project_root, "data"))
@@ -533,6 +571,20 @@ def main():
             from data.data_fetcher import fetch_sp500_tickers
             univ = fetch_sp500_tickers()
             univ_tickers = set(univ["tickers"].tolist())
+        elif args.universe.lower() == "kospi200":
+            try:
+                from src.data.krx_fetcher import KRXFetcher
+                krx = KRXFetcher()
+                univ = krx.get_kospi200_components()
+                univ_tickers = set(univ["tickers"].tolist())
+            except Exception as e:
+                # Fallback: load from DB krx_fundamental_data tickers
+                conn_univ = sqlite3.connect(args.db)
+                univ_tickers = set(
+                    pd.read_sql("SELECT DISTINCT ticker FROM krx_fundamental_data", conn_univ)["ticker"].tolist()
+                )
+                conn_univ.close()
+                print(f"WARNING: KRXFetcher failed ({e}); loaded {len(univ_tickers)} tickers from DB")
         elif os.path.exists(args.universe):
             univ_tickers = set(pd.read_csv(args.universe)["tickers"].tolist())
         else:

@@ -79,7 +79,7 @@ def build_backtest_data(rankings: pd.DataFrame, buy_date: str, sell_date: str) -
     all_pick_tics = []
     for b in buckets_in_data:
         bdf = rankings[rankings["bucket"] == b].sort_values("rank_best")
-        picks = bdf["tic"].head(5).tolist()
+        picks = [str(t).zfill(6) if str(t).isdigit() else str(t) for t in bdf["tic"].head(5).tolist()]
         bucket_picks[b] = picks
         all_pick_tics.extend(picks)
         print(f"  [backtest] {b}: {', '.join(picks)}")
@@ -1090,14 +1090,206 @@ renderTable();
 # CLI
 # ---------------------------------------------------------------------------
 
+def build_korea_compare_html(result_files: dict, title: str = "Korea Strategy Comparison") -> str:
+    """
+    Build a standalone HTML page comparing 3 Korean strategies.
+
+    Args:
+        result_files: {strategy_name: csv_path}  — each CSV must have columns:
+            date, portfolio_value, daily_return, cumulative_return
+        title: Page title
+
+    Returns:
+        HTML string
+    """
+    strategy_data: dict = {}
+    for name, path in result_files.items():
+        if not os.path.exists(path):
+            print(f"WARNING: {path} not found, skipping {name}")
+            continue
+        raw = pd.read_csv(path, index_col=0)
+        raw.index = pd.to_datetime(raw.index)
+        raw = raw.sort_index()
+        # Normalize to portfolio_value column
+        if "portfolio_value" not in raw.columns:
+            # bt backtest output: first numeric column is portfolio value
+            num_cols = raw.select_dtypes("number").columns.tolist()
+            if num_cols:
+                raw = raw[[num_cols[0]]].rename(columns={num_cols[0]: "portfolio_value"})
+        raw.index.name = "date"
+        strategy_data[name] = raw
+
+    if not strategy_data:
+        return "<html><body><p>No data available.</p></body></html>"
+
+    # Compute summary metrics per strategy
+    summary_rows = []
+    chart_series: dict = {}  # {name: {dates:[], values:[]}}
+
+    for name, df in strategy_data.items():
+        pv = df["portfolio_value"]
+        ret = df.get("daily_return", pv.pct_change().dropna())
+        n = len(ret)
+        ann = 252
+        total_ret = float(pv.iloc[-1] / pv.iloc[0] - 1) if pv.iloc[0] > 0 else 0.0
+        years = n / ann
+        cagr = float((1 + total_ret) ** (1 / years) - 1) if years > 0 else 0.0
+        vol = float(ret.std() * np.sqrt(ann)) if n > 1 else 0.0
+        sharpe = cagr / vol if vol > 0 else 0.0
+        cum_max = pv.cummax()
+        mdd = float(((pv - cum_max) / cum_max).min())
+        win_rate = float((ret > 0).sum() / n) if n > 0 else 0.0
+
+        summary_rows.append({
+            "Strategy": name,
+            "CAGR": f"{cagr:.2%}",
+            "Ann. Vol": f"{vol:.2%}",
+            "Sharpe": f"{sharpe:.2f}",
+            "MDD": f"{mdd:.2%}",
+            "Win Rate": f"{win_rate:.2%}",
+            "Total Return": f"{total_ret:.2%}",
+        })
+
+        # Normalize to 100 for chart
+        norm = (pv / pv.iloc[0] * 100).reset_index()
+        chart_series[name] = {
+            "dates": norm["date"].dt.strftime("%Y-%m-%d").tolist(),
+            "values": norm["portfolio_value"].round(2).tolist(),
+        }
+
+    summary_json = json.dumps(summary_rows)
+    chart_json = json.dumps(chart_series)
+    cols_json = json.dumps(list(summary_rows[0].keys()) if summary_rows else [])
+
+    html = f"""<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>{title}</title>
+<style>
+  body {{ font-family: system-ui, sans-serif; margin: 0; padding: 24px; background: #f8f9fa; color: #212529; }}
+  h1 {{ font-size: 1.5rem; margin-bottom: 8px; }}
+  .subtitle {{ color: #6c757d; font-size: 0.9rem; margin-bottom: 24px; }}
+  .card {{ background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
+  table {{ width: 100%; border-collapse: collapse; font-size: 0.85rem; }}
+  th {{ text-align: left; padding: 10px 14px; border-bottom: 2px solid #dee2e6; color: #495057; font-size: 0.75rem; text-transform: uppercase; }}
+  td {{ padding: 10px 14px; border-bottom: 1px solid #f3f4f6; }}
+  tr:hover td {{ background: #f8f9fa; }}
+  canvas {{ max-width: 100%; }}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<h1>{title}</h1>
+<p class="subtitle">한국 주식 3전략 성과 비교 (분기 팩터 · 스윙 · 단타)</p>
+
+<div class="card">
+  <h2 style="font-size:1rem;margin-bottom:16px;">누적 수익률 (기준 = 100)</h2>
+  <canvas id="chartCumRet" height="80"></canvas>
+</div>
+
+<div class="card">
+  <h2 style="font-size:1rem;margin-bottom:16px;">성과 요약</h2>
+  <table id="summaryTable">
+    <thead><tr id="summaryHead"></tr></thead>
+    <tbody id="summaryBody"></tbody>
+  </table>
+</div>
+
+<script>
+const SUMMARY = {summary_json};
+const CHART   = {chart_json};
+const COLS    = {cols_json};
+
+// Summary table
+const head = document.getElementById('summaryHead');
+COLS.forEach(c => {{ const th = document.createElement('th'); th.textContent = c; head.appendChild(th); }});
+const body = document.getElementById('summaryBody');
+SUMMARY.forEach(row => {{
+  const tr = document.createElement('tr');
+  COLS.forEach(c => {{ const td = document.createElement('td'); td.textContent = row[c] ?? ''; tr.appendChild(td); }});
+  body.appendChild(tr);
+}});
+
+// Chart
+const COLORS = ['#7c3aed','#2563eb','#059669','#dc2626','#d97706'];
+const allDates = Object.values(CHART).flatMap(s => s.dates);
+const uniqueDates = [...new Set(allDates)].sort();
+const datasets = Object.entries(CHART).map(([name, s], i) => {{
+  const lookup = Object.fromEntries(s.dates.map((d,j) => [d, s.values[j]]));
+  return {{
+    label: name,
+    data: uniqueDates.map(d => lookup[d] ?? null),
+    borderColor: COLORS[i % COLORS.length],
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    pointRadius: 0,
+    tension: 0.1,
+    spanGaps: true,
+  }};
+}});
+
+new Chart(document.getElementById('chartCumRet'), {{
+  type: 'line',
+  data: {{ labels: uniqueDates, datasets }},
+  options: {{
+    responsive: true,
+    interaction: {{ mode: 'index', intersect: false }},
+    plugins: {{ legend: {{ position: 'top' }}, tooltip: {{ callbacks: {{
+      label: ctx => `${{ctx.dataset.label}}: ${{ctx.parsed.y?.toFixed(1) ?? ''}}`,
+    }} }} }},
+    scales: {{
+      x: {{ ticks: {{ maxTicksLimit: 12 }}, grid: {{ display: false }} }},
+      y: {{ title: {{ display: true, text: '누적가치 (100 기준)' }} }},
+    }},
+  }},
+}});
+</script>
+</body>
+</html>"""
+    return html
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate HTML dashboard from ML dashboard Excel")
-    parser.add_argument("excel_path", help="Path to the dashboard Excel file")
+    parser.add_argument("excel_path", nargs="?", help="Path to the dashboard Excel file")
     parser.add_argument("--no-open", action="store_true", help="Do not auto-open in browser")
     parser.add_argument("-o", "--output", help="Output HTML path (default: same dir as Excel)")
     parser.add_argument("--buy-date", help="Backtest buy date (YYYY-MM-DD). Default: inferred from tradedate column")
     parser.add_argument("--sell-date", help="Backtest sell date (YYYY-MM-DD). Default: today")
+    # Korea 3-strategy comparison mode
+    parser.add_argument("--korea-compare", action="store_true",
+                        help="Build Korea 3-strategy comparison dashboard (requires --quarterly, --swing, --intraday)")
+    parser.add_argument("--quarterly", help="CSV path for quarterly factor backtest results")
+    parser.add_argument("--swing", help="CSV path for swing trading backtest results")
+    parser.add_argument("--intraday", help="CSV path for intraday backtest results")
     args = parser.parse_args()
+
+    if args.korea_compare:
+        result_files = {}
+        if args.quarterly:
+            result_files["분기 팩터"] = args.quarterly
+        if args.swing:
+            result_files["스윙"] = args.swing
+        if args.intraday:
+            result_files["단타"] = args.intraday
+        if not result_files:
+            print("Error: --korea-compare requires at least one of --quarterly/--swing/--intraday")
+            sys.exit(1)
+        html = build_korea_compare_html(result_files)
+        out_path = args.output or "data/korea_strategy_comparison.html"
+        os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(html)
+        print(f"Saved: {out_path}")
+        if not args.no_open:
+            webbrowser.open("file://" + os.path.abspath(out_path))
+            print("Opened in browser.")
+        return
+
+    if not args.excel_path:
+        parser.print_help()
+        sys.exit(1)
 
     if not os.path.exists(args.excel_path):
         print(f"Error: File not found: {args.excel_path}")

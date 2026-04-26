@@ -20,6 +20,11 @@ requests>=2.31.0
 python-dotenv>=1.0.0
 alpaca-py>=0.13.0
 
+# Korean market data sources
+pykrx>=1.0.47
+finance-datareader>=0.9.50
+dart-fss>=0.4.2  # DART API (optional)
+
 # LLM / NLP
 openai>=1.40.0
 
@@ -41,7 +46,7 @@ sqlalchemy>=2.0.0
 pathlib>=1.0.1
 typing-extensions>=4.8.0
 lxml>=4.9.0  # For pandas.read_html
-finnhub>=2.4.19
+finnhub-python>=2.4.19
 
 # Development and testing
 pytest>=7.4.0
@@ -59,3 +64,5 @@ sphinx>=7.2.0
 # Packaging
 setuptools>=68.0.0
 wheel>=0.41.0
+
+tzlocal

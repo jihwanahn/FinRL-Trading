@@ -45,10 +45,15 @@ class BacktestConfig:
     initial_capital: float = 1000000.0
     transaction_cost: float = 0.001  # 0.1% per trade
     benchmark_tickers: List[str] = None
+    exchange: str = 'NYSE'  # 'NYSE' for US, 'XKRX' for Korea
 
     def __post_init__(self):
         if self.benchmark_tickers is None:
-            self.benchmark_tickers = ['SPY', 'QQQ']
+            # Default benchmarks per exchange
+            if self.exchange == 'XKRX':
+                self.benchmark_tickers = ['069500', '229200']  # KODEX 200, KODEX KOSDAQ 150
+            else:
+                self.benchmark_tickers = ['SPY', 'QQQ']
 
 
 @dataclass
@@ -411,16 +416,35 @@ class BacktestEngine:
 
         for ticker in self.config.benchmark_tickers:
             try:
-                # Fetch benchmark price data
-                bm_data = fetch_price_data([ticker], start_date, end_date)
-                if bm_data.empty:
-                    self.logger.warning(f"No data for benchmark {ticker}, skipping")
-                    continue
+                # For Korean exchange, try DataStore first (avoids FMP/Yahoo for KRX ETFs)
+                bm_prices = None
+                if self.config.exchange == 'XKRX':
+                    try:
+                        from src.data.data_store import get_data_store
+                        ds = get_data_store()
+                        bm_raw = ds.get_price_data([ticker], start_date, end_date)
+                        if not bm_raw.empty:
+                            tic_col = next((c for c in ['tic', 'ticker', 'gvkey'] if c in bm_raw.columns), None)
+                            date_col = next((c for c in ['datadate', 'date'] if c in bm_raw.columns), None)
+                            price_col = next((c for c in ['adj_close', 'prccd', 'close'] if c in bm_raw.columns), None)
+                            if tic_col and date_col and price_col:
+                                bm_prices = bm_raw.pivot_table(index=date_col, columns=tic_col, values=price_col, aggfunc='last')
+                                bm_prices.index = pd.to_datetime(bm_prices.index)
+                                bm_prices = bm_prices.ffill().dropna(how='all')
+                                if ticker not in bm_prices.columns:
+                                    bm_prices = None
+                    except Exception:
+                        bm_prices = None
 
-                # Prepare price data (single column)
-                bm_prices = bm_data.pivot(index='datadate', columns='tic', values='adj_close')
-                bm_prices.index = pd.to_datetime(bm_prices.index)
-                bm_prices = bm_prices.ffill().dropna(how='all')
+                if bm_prices is None:
+                    # Fallback: fetch via data_fetcher (US sources)
+                    bm_data = fetch_price_data([ticker], start_date, end_date)
+                    if bm_data.empty:
+                        self.logger.warning(f"No data for benchmark {ticker}, skipping")
+                        continue
+                    bm_prices = bm_data.pivot(index='datadate', columns='tic', values='adj_close')
+                    bm_prices.index = pd.to_datetime(bm_prices.index)
+                    bm_prices = bm_prices.ffill().dropna(how='all')
 
                 if bm_prices.empty or ticker not in bm_prices.columns:
                     self.logger.warning(f"No valid price data for {ticker}")
