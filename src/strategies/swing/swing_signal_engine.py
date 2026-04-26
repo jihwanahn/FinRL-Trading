@@ -127,13 +127,11 @@ class SwingSignalEngine(BaseSignalEngine):
             weights['macd'] * macd_signal_series +
             weights['bb'] * bb_signal
         )
-        # 리밸런싱 주기에 맞게 reample
-        # 기본 'W-FRI' (주별), '2W' (격주), 'ME' (월말), 'QS' (분기초)
+        # 리밸런싱 주기에 맞게 resample
+        # '2W'는 backtest runner에서 서브샘플링하므로 'W-FRI'로 생성
         freq = self.rebalance_freq
-        if freq == 'W':
+        if freq in ('W', '2W'):
             rule = 'W-FRI'
-        elif freq == '2W':
-            rule = '2W-FRI'
         elif freq in ('ME', 'M'):
             rule = 'ME'
         elif freq in ('QS', 'Q'):

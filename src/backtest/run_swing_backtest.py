@@ -126,10 +126,17 @@ def generate_swing_weights(price_wide: pd.DataFrame,
     signals_df = pd.DataFrame(all_signals)
     signals_df.index = pd.to_datetime(signals_df.index)
 
-    # 비중 계산
+    # 비중 계산 (주간 신호 먼저)
     weights_df = engine.generate_weights_from_signals(
         signals_df, max_positions=max_positions, min_signal=min_signal
     )
+
+    # 격주(2W) 리밸런싱: 주간 신호에서 격주로 서브샘플링
+    if engine.rebalance_freq == '2W':
+        biweekly_idx = weights_df.index[::2]  # 짝수 주만 선택
+        weights_df = weights_df.loc[biweekly_idx]
+        logger.info(f"격주 리밸런싱 적용: {len(weights_df)}개 리밸런싱 날짜")
+
     logger.info(f"스윙 신호 완료: {len(weights_df)}주 × {len(weights_df.columns)}종목")
     return weights_df
 
