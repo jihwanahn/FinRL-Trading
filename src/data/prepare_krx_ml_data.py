@@ -224,10 +224,13 @@ def build_krx_ml_table(db_path: str, start_date: str, end_date: str) -> pd.DataF
         np.nan
     )
 
+    # debt_to_equity = same as debt_ratio (total_liabilities / total_equity)
+    kf['debt_to_equity'] = kf['debt_ratio']
+
     # Fields not available in KRX data → NaN (LightGBM handles NaN natively)
     for col in ['ps', 'peg', 'ev_multiple',
                 'fcf_per_share', 'cash_per_share', 'capex_per_share', 'fcf_to_ocf', 'ocf_ratio',
-                'debt_to_equity', 'debt_to_mktcap',
+                'debt_to_mktcap',
                 'acc_rec_turnover', 'asset_turnover', 'payables_turnover',
                 'interest_coverage', 'debt_service_coverage',
                 'solvency_ratio']:

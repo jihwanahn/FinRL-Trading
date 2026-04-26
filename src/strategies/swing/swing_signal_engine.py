@@ -135,7 +135,9 @@ class SwingSignalEngine(BaseSignalEngine):
         elif freq in ('ME', 'M'):
             rule = 'ME'
         elif freq in ('QS', 'Q'):
-            rule = 'QS'
+            # QE = quarter-end label: signal at 2015-03-31 is used for Q2 trading
+            # Avoids look-ahead bias (QS labels quarter-start with end-of-quarter data)
+            rule = 'QE'
         else:
             rule = freq  # pass through
         resampled = combined.resample(rule).last()
