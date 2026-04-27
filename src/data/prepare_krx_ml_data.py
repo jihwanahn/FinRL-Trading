@@ -227,6 +227,26 @@ def build_krx_ml_table(db_path: str, start_date: str, end_date: str) -> pd.DataF
     # debt_to_equity = same as debt_ratio (total_liabilities / total_equity)
     kf['debt_to_equity'] = kf['debt_ratio']
 
+    # Sanity clipping: holding companies and unusual structures can produce
+    # extreme ratios due to DART unit mismatches or near-zero denominators.
+    # Values outside these ranges are set to NaN (treated as missing by ML).
+    RATIO_BOUNDS = {
+        'gross_margin':     (-2.0,  2.0),   # -200% ~ +200%
+        'operating_margin': (-5.0,  5.0),   # -500% ~ +500%
+        'roe':              (-5.0,  5.0),   # -500% ~ +500%
+        'cur_ratio':        (0.0,  50.0),
+        'debt_ratio':       (-20.0, 50.0),
+        'debt_to_equity':   (-20.0, 50.0),
+        'pe':               (0.0, 1000.0),  # PE > 1000 is economically meaningless
+        'pb':               (0.0,   50.0),  # PB > 50 is extreme
+    }
+    for col, (lo, hi) in RATIO_BOUNDS.items():
+        if col in kf.columns:
+            bad = kf[col].notna() & ((kf[col] < lo) | (kf[col] > hi))
+            if bad.sum() > 0:
+                logger.debug(f"Clipping {bad.sum()} extreme {col} values to NaN")
+                kf.loc[bad, col] = np.nan
+
     # Fields not available in KRX data → NaN (LightGBM handles NaN natively)
     for col in ['ps', 'peg', 'ev_multiple',
                 'fcf_per_share', 'cash_per_share', 'capex_per_share', 'fcf_to_ocf', 'ocf_ratio',

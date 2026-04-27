@@ -308,8 +308,9 @@ def run_bucket(bucket, bdf, feature_cols, val_cutoff="2025-12-31", val_quarters=
     infer_b["pred_ensemble_avg"] = sum(infer_b[col] * w for col, w in weights.items())
 
     # Use ensemble_avg as the primary predicted_return (better cross-sectional variance
-    # than single best model which uses Ridge meta-learner and over-shrinks predictions)
-    infer_b["predicted_return"] = infer_b["pred_ensemble_avg"]
+    # than single best model which uses Ridge meta-learner and over-shrinks predictions).
+    # Clip at ±50% per quarter to suppress model instability from Ridge outliers.
+    infer_b["predicted_return"] = infer_b["pred_ensemble_avg"].clip(-0.5, 0.5)
     infer_b["best_model"] = f"{best_name}+ensemble_avg"
 
     infer_b = infer_b.sort_values(["datadate", "predicted_return"], ascending=[True, False])
