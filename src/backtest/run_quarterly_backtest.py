@@ -146,6 +146,8 @@ def main():
                         help='버킷당 상위 종목 수 (기본: 5)')
     parser.add_argument('--transaction-cost', type=float, default=0.003)
     parser.add_argument('--output-dir', default='data/results')
+    parser.add_argument('--pred-col', default='predicted_return',
+                        help='예측값 컬럼 (기본: predicted_return, 또는 pred_LGBM, pred_ensemble_avg 등)')
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -166,6 +168,14 @@ def main():
         sys.exit(1)
 
     # 2) 비중 생성
+    pred_col = args.pred_col
+    if pred_col not in pred_df.columns:
+        logger.error(f"--pred-col '{pred_col}'이 예측 CSV에 없습니다. 사용 가능: {[c for c in pred_df.columns if 'pred' in c]}")
+        sys.exit(1)
+    if pred_col != 'predicted_return':
+        pred_df = pred_df.copy()
+        pred_df['predicted_return'] = pred_df[pred_col]
+        logger.info(f"예측 컬럼 교체: {pred_col} (std={pred_df['predicted_return'].std():.4f})")
     weight_signals = build_weight_signals(pred_df, top_n_per_bucket=args.top_n)
 
     # 3) 가격 데이터 로드

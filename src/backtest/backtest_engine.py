@@ -351,7 +351,7 @@ class BacktestEngine:
             }
 
         # 将日收益聚合为月收益
-        monthly_returns = returns.resample('M').apply(lambda x: (1 + x).prod() - 1)
+        monthly_returns = returns.resample('ME').apply(lambda x: (1 + x).prod() - 1)
         if monthly_returns.empty:
             return {
                 'monthly_return': 0.0,

@@ -307,6 +307,11 @@ def run_bucket(bucket, bdf, feature_cols, val_cutoff="2025-12-31", val_quarters=
         weights = {k: v / total_w for k, v in weights.items()}
     infer_b["pred_ensemble_avg"] = sum(infer_b[col] * w for col, w in weights.items())
 
+    # Use ensemble_avg as the primary predicted_return (better cross-sectional variance
+    # than single best model which uses Ridge meta-learner and over-shrinks predictions)
+    infer_b["predicted_return"] = infer_b["pred_ensemble_avg"]
+    infer_b["best_model"] = f"{best_name}+ensemble_avg"
+
     infer_b = infer_b.sort_values(["datadate", "predicted_return"], ascending=[True, False])
 
     # Print ranking per quarter
